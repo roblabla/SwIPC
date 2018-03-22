@@ -12,7 +12,7 @@ BUILTINS = {
 	"i32": { "len": 4, "ctype": "int32_t" },
 	"u64": { "len": 8, "ctype": "uint64_t" },
 	"i64": { "len": 4, "ctype": "int64_t" },
-	"u128": { "len": 16, "ctype": "uint128_t" }, # DERP
+	#"u128": { "len": 16, "ctype": "uint128_t" }, # DERP
 }
 
 def camelToSnake(s):
@@ -68,27 +68,28 @@ def getType(output, t):
 				return ret
 	elif t[0] == 'object':
 		it = t[1][0]
-		if it in ifaces:
+		if it in ifaces and (ninty_to_c(it) == "ifilesystem" or ninty_to_c(it) == "ifilesystem" or ninty_to_c(it) == "ifilesystem"):
 			return ("%s_t" % ninty_to_c(it), None, False)
 		else:
-			return ("ipc_object_t", None, False)
+			raise UnsupportedStructException("ipc_object_t")
+			#return ("ipc_object_t", None, False)
 			#ret = it
 	elif t[0] == 'KObject':
-		return ('KObject', None, False)
+		raise UnsupportedStructException("KObject")
 	elif t[0] == 'align':
-		return ('UNSUPPORTED', None, False)
+		raise UnsupportedStructException("align")
 	elif t[0] == 'bytes':
 		return ("%suint8_t" % ("const " if not output else ""), "[%s]" % emitInt(t[1]), True)
 	elif t[0] == 'pid':
 		raise Exception("pid is not a valid type")
-	elif t[0] in types:
+	elif t[0] in types and t[0] == "nn::fssrv::sf::IDirectoryEntry":
 		# TODO: call getType to know if it is a ptr or not.
 		return (t[0] + "_t", None, False)
 	elif t[0] in BUILTINS:
 		assert len(t) == 1
 		return (BUILTINS[t[0]]['ctype'], None, False)
 	else:
-		raise UnsupportedStructException("Unknown Type %s" % t)
+		raise UnsupportedStructException(t[0])
 
 def formatArgs(out_elems, in_elems, output=False):
 	from functools import partial
@@ -96,7 +97,12 @@ def formatArgs(out_elems, in_elems, output=False):
 	if output and len(elems) > 1:
 		return '(%s)' % format(elems)
 
+	failed = False
+
 	def sub(output, elem):
+		# I'm so sorry...
+		nonlocal failed
+
 		idx, elem = elem
 		name, elem = elem
 
@@ -110,7 +116,12 @@ def formatArgs(out_elems, in_elems, output=False):
 			name = 'unk%s' % idx
 		name = ("out_" if output else "in_") + name
 
-		elems = getType(output, elem)
+		try:
+			elems = getType(output, elem)
+		except UnsupportedStructException as e:
+			failed = True
+			elems = (e.args[0], None, False)
+
 		if not isinstance(elems, list):
 			elems = [elems]
 
@@ -125,7 +136,10 @@ def formatArgs(out_elems, in_elems, output=False):
 				ret.append('%s *%s%s' % (ninty_to_c(pre), name, post if post is not None else ""))
 		return ", ".join(ret)
 
-	return ', '.join(chain(filter(None, map(partial(sub, True), enumerate(out_elems))), filter(None, map(partial(sub, False), enumerate(in_elems)))))
+	ret = ', '.join(chain(filter(None, map(partial(sub, True), enumerate(out_elems))), filter(None, map(partial(sub, False), enumerate(in_elems)))))
+	if failed:
+		raise UnsupportedStructException(ret)
+	return ret
 
 def generate_input_code(name, ty, rawoffset, bufferlist):
 	buf = ""
@@ -144,13 +158,13 @@ def generate_input_code(name, ty, rawoffset, bufferlist):
 	elif ty[0] == 'align':
 		buf += "align %s NOTSUPPORTED" % name
 	elif ty[0] == 'bytes':
-		buf += "\tmemcpy(rq.raw_data + %d, %s, %d);" % (rawoffset, name, ty[1])
+		buf += "\tmemcpy(raw + %d, %s, %d);" % (rawoffset, name, ty[1])
 		rawoffset += ty[1]
 	elif ty[0] in types:
 		#print("\tmemcpy(raw + %d, %s, sizeof(%s));" % (rawoffset, name, ninty_to_c(ty[0])))
 		return generate_input_code(name, types[ty[0]], rawoffset, bufferlist)
 	elif ty[0] in BUILTINS:
-		buf += "\t*(%s*)(rq.raw_data + %d) = %s;" % (BUILTINS[ty[0]]["ctype"], rawoffset, name)
+		buf += "\t*(%s*)(raw + %d) = %s;" % (BUILTINS[ty[0]]["ctype"], rawoffset, name)
 		rawoffset += BUILTINS[ty[0]]["len"]
 	else:
 		raise Exception("Unknown type %s" % ty[0])
@@ -182,13 +196,13 @@ def generate_output_code(name, ty, objectlen, rawoffset, objectoffset, bufferlis
 	elif ty[0] == 'array':
 		buf_pre += "array %s NOTSUPPORTED" % name
 	elif ty[0] == 'bytes':
-		buf_post += "\tmemcpy(%s, rs.raw_data + %d, %d);" % (name, rawoffset, ty[1])
+		buf_post += "\tmemcpy(%s, output_raw + %d, %d);" % (name, rawoffset, ty[1])
 		rawoffset += ty[1]
 	elif ty[0] in types:
 		#print("\tmemcpy(raw + %d, %s, sizeof(%s));" % (rawoffset, name, ninty_to_c(ty[0])))
 		return generate_output_code(name, types[ty[0]], objectlen, rawoffset, objectoffset, bufferlist)
 	elif ty[0] in BUILTINS:
-		buf_post += "\t*%s = (%s)(rs.raw_data + %d);" % (name, BUILTINS[ty[0]]["ctype"], rawoffset)
+		buf_post += "\t*%s = *(%s*)(output_raw + %d);" % (name, BUILTINS[ty[0]]["ctype"], rawoffset)
 		rawoffset += BUILTINS[ty[0]]["len"]
 	else:
 		raise Exception("Unknown type %s" % ty[0])
@@ -236,7 +250,7 @@ else:
 	iface = ifaces[prog_args.i]
 
 def gen_init():
-	cmd = iface.get('Initialize')
+	cmd = next((c for c in iface['cmds'] if c['name'] == 'Initialize'))
 	args = "void" if cmd is None else formatArgs(cmd['outputs'], cmd['inputs'])
 
 	print("result_t %s_init(%s) {" % (c_ifacename, args))
@@ -301,6 +315,9 @@ def gen_ipc_method(cmd):
 	bufferlist = []
 	rawoffset = 0
 	buf = ""
+
+	# TODO: Process buffers first. Then rq raw_data. Then rs raw_data. This
+	# should allow us to follow the standard coding style.
 	for (idx, (name, ty)) in enumerate(cmd['inputs']):
 		if name is None:
 			name = 'unk%s' % idx
@@ -334,16 +351,6 @@ def gen_ipc_method(cmd):
 		if tmpbufpost != "":
 			bufpost += tmpbufpost + "\n"
 
-	# Process output buffers first so all response manipulation is done
-	# together.
-	if len(bufferlist) > 0:
-		print("\tipc_buffer_t *buffers[] = {")
-		print(",\n".join(["\t\t&%s" % buf for buf in bufferlist]))
-		print("\t};")
-		print("\trq.num_buffers = %d;" % len(bufferlist))
-		print("\trq.buffers = buffers;")
-		print("")
-
 	print("\tipc_response_fmt_t rs = ipc_default_response_fmt;")
 
 	if rawoffset != 0:
@@ -362,6 +369,14 @@ def gen_ipc_method(cmd):
 		print(bufpre)
 		print("")
 
+	if len(bufferlist) > 0:
+		print("\tipc_buffer_t *buffers[] = {")
+		print(",\n".join(["\t\t&%s" % buf for buf in bufferlist]))
+		print("\t};")
+		print("\trq.num_buffers = %d;" % len(bufferlist))
+		print("\trq.buffers = buffers;")
+		print("")
+
 	print("\tres = ipc_send(%s, &rq, &rs);" % ("obj" if prog_args.ipc_object_arg else (c_ifacename + "_object")))
 
 	if bufpost != "":
@@ -374,10 +389,11 @@ print("#include<libtransistor/ipc.h>")
 print("#include<libtransistor/err.h>")
 print("#include<libtransistor/util.h>")
 print("#include<libtransistor/ipc/sm.h>")
+print("#include<string.h>")
 print("")
 
 if prog_args.s:
-	print("static ipc_object_t %s_t;" % c_ifacename)
+	print("static ipc_object_t %s_object;" % c_ifacename)
 	print("static int %s_initializations = 0;" % c_ifacename)
 	print("")
 	gen_init()
@@ -398,8 +414,12 @@ for cmd in sorted(iface['cmds'], key=lambda x: x['cmdId']):
 		print("\treturn res;")
 		print("}")
 	except UnsupportedStructException as e:
-		print("")
-		print("// result_t %s_%s(UNSUPPORTED)" % (c_ifacename, camelToSnake(cname)))
+		if prog_args.ipc_object_arg:
+			args = ", ".join(filter(lambda x: x != "", ["%s_t obj" % c_ifacename, e.args[0]]))
+		else:
+			args = e.args[0]
+		print("// result_t %s_%s(%s);" % (c_ifacename, camelToSnake(cname), args))
+
 
 
 print("")
@@ -422,13 +442,16 @@ print("")
 for cmd in sorted(iface['cmds'], key=lambda x: x['cmdId']):
 	cname = cmd['name']
 	if cname == "Initialize":
-		continue
+		cname = "init"
 	try:
 		args = formatArgs(cmd['outputs'], cmd['inputs'])
 		if prog_args.ipc_object_arg:
 			args = ", ".join(filter(lambda x: x != "", ["%s_t obj" % c_ifacename, args]))
 		print("result_t %s_%s(%s);" % (c_ifacename, camelToSnake(cname), args))
 	except UnsupportedStructException as e:
-		print("")
-		print("// result_t %s_%s(UNSUPPORTED)" % (c_ifacename, camelToSnake(cname)))
+		if prog_args.ipc_object_arg:
+			args = ", ".join(filter(lambda x: x != "", ["%s_t obj" % c_ifacename, e.args[0]]))
+		else:
+			args = e.args[0]
+		print("// result_t %s_%s(%s);" % (c_ifacename, camelToSnake(cname), args))
 

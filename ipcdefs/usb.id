@@ -14,9 +14,9 @@ type nn::usb::usb_descriptor_data = struct {
 	u16 idVendor;
 	u16 idProduct;
 	u16 bcdDevice;
-	array<u8, 0x20> manufacturer;
-	array<u8, 0x20> product;
-	array<u8, 0x20> serialNumber;
+	bytes<0x20> manufacturer;
+	bytes<0x20> product;
+	bytes<0x20> serialNumber;
 };
 
 type nn::usb::usb_endpoint_descriptor = struct {
