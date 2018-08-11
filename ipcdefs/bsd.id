@@ -4,10 +4,12 @@ type nn::socket::timeout = struct {
 	u64 off;
 };
 type nn::socket::fd_set = u128;
-type nn::socket::sockaddr = struct<16> {
-	u8 sa_len;
-	u8 sa_family;
-	bytes<14> sa_data;
+type nn::socket::sockaddr_in = struct<16> {
+	u8 sin_len;
+	u8 sin_family;
+	u16 sin_port;
+	u32 sin_addr;
+	bytes<8> sin_zero;
 };
 
 type nn::socket::BsdBufferConfig = struct {
@@ -83,14 +85,14 @@ interface nn::socket::sf::IClient is bsd:u, bsd:s {
 	[6] Poll(u32, u32, buffer<unknown, 0x21, 0>) -> (i32 ret, u32 bsd_errno, buffer<unknown, 0x22, 0>);
 	[7] Sysctl(buffer<unknown, 0x21, 0>, buffer<unknown, 0x21, 0>) -> (i32 ret, u32 bsd_errno, u32, buffer<unknown, 0x22, 0>);
 	[8] Recv(u32 socket, u32 flags) -> (i32 ret, u32 bsd_errno, array<i8, 0x22> message);
-	[9] RecvFrom(u32 sock, u32 flags) -> (i32 ret, u32 bsd_errno, u32 addrlen, buffer<i8, 0x22, 0> message, buffer<nn::socket::sockaddr, 0x22, 16>);
+	[9] RecvFrom(u32 sock, u32 flags) -> (i32 ret, u32 bsd_errno, u32 addrlen, buffer<i8, 0x22, 0> message, buffer<nn::socket::sockaddr_in, 0x22, 16>);
 	[10] Send(u32 socket, u32 flags, buffer<i8, 0x21, 0>) -> (i32 ret, u32 bsd_errno);
-	[11] SendTo(u32 socket, u32 flags, buffer<i8, 0x21, 0>, buffer<nn::socket::sockaddr, 0x21, 16>) -> (i32 ret, u32 bsd_errno);
-	[12] Accept(u32 socket) -> (i32 ret, u32 bsd_errno, u32 addrlen, buffer<nn::socket::sockaddr, 0x22, 16> addr);
-	[13] Bind(u32 socket, buffer<nn::socket::sockaddr, 0x21, 16>) -> (i32 ret, u32 bsd_errno);
-	[14] Connect(u32 socket, buffer<nn::socket::sockaddr, 0x21, 16>) -> (i32 ret, u32 bsd_errno);
-	[15] GetPeerName(u32 socket) -> (i32 ret, u32 bsd_errno, u32 addrlen, buffer<nn::socket::sockaddr, 0x22, 16> addr);
-	[16] GetSockName(u32 socket) -> (i32 ret, u32 bsd_errno, u32 addrlen, buffer<nn::socket::sockaddr, 0x22, 16> addr);
+	[11] SendTo(u32 socket, u32 flags, buffer<i8, 0x21, 0>, buffer<nn::socket::sockaddr_in, 0x21, 16>) -> (i32 ret, u32 bsd_errno);
+	[12] Accept(u32 socket) -> (i32 ret, u32 bsd_errno, u32 addrlen, buffer<nn::socket::sockaddr_in, 0x22, 16> addr);
+	[13] Bind(u32 socket, buffer<nn::socket::sockaddr_in, 0x21, 16>) -> (i32 ret, u32 bsd_errno);
+	[14] Connect(u32 socket, buffer<nn::socket::sockaddr_in, 0x21, 16>) -> (i32 ret, u32 bsd_errno);
+	[15] GetPeerName(u32 socket) -> (i32 ret, u32 bsd_errno, u32 addrlen, buffer<nn::socket::sockaddr_in, 0x22, 16> addr);
+	[16] GetSockName(u32 socket) -> (i32 ret, u32 bsd_errno, u32 addrlen, buffer<nn::socket::sockaddr_in, 0x22, 16> addr);
 	[17] GetSockOpt(u32, u32, u32) -> (i32 ret, u32 bsd_errno, u32, buffer<unknown, 0x22, 0>);
 	[18] Listen(u32 socket, u32 backlog) -> (i32 ret, u32 bsd_errno);
 	[19] Ioctl(u32, u32, u32, buffer<unknown, 0x21, 0>, buffer<unknown, 0x21, 0>, buffer<unknown, 0x21, 0>, buffer<unknown, 0x21, 0>) -> (i32 ret, u32 bsd_errno, buffer<unknown, 0x22, 0>, buffer<unknown, 0x22, 0>, buffer<unknown, 0x22, 0>, buffer<unknown, 0x22, 0>);
